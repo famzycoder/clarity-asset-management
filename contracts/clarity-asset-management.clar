@@ -361,3 +361,79 @@
     (ok {metadata: (unwrap-panic (get-asset-metadata asset-id)), 
          owner: (unwrap-panic (get-asset-owner asset-id)),
          destroyed: (unwrap-panic (check-destruction-status asset-id))}))
+
+;; Ownership verification
+(define-public (verify-asset-ownership (asset-id uint) (claimed-owner principal))
+    (ok (is-eq (unwrap! (nft-get-owner? digital-asset asset-id) err-ownership-violation) claimed-owner)))
+
+;; ============================================================
+;; Additional Asset Management Functions
+;; ============================================================
+
+;; Gets asset ownership records
+(define-read-only (retrieve-ownership-records (asset-id uint))
+    (ok (map-get? transfer-history asset-id)))
+
+;; Gets asset metadata with validation
+(define-public (get-validated-metadata (asset-id uint))
+    (ok (map-get? asset-metadata asset-id)))
+
+;; Validates metadata batch
+(define-private (validate-metadata-batch (metadata-urls (list 50 (string-ascii 256))))
+    (begin
+        (asserts! (<= (len metadata-urls) bulk-creation-limit) err-bulk-limit-exceeded)
+        (asserts! (> (len metadata-urls) u0) err-bulk-limit-exceeded)
+        (ok (map validate-metadata metadata-urls))))
+
+;; Gets batch creation status
+(define-read-only (check-batch-status (batch-id uint))
+    (ok (map-get? creation-batch-data batch-id)))
+
+;; Enhanced security verification
+(define-private (security-verification (asset-id uint))
+    (begin
+        (asserts! (not (is-asset-destroyed asset-id)) err-previously-destroyed)
+        (asserts! (is-some (map-get? asset-metadata asset-id)) err-asset-missing)
+        (ok true)))
+
+;; Secure transfer validation
+(define-public (validate-transfer-security (asset-id uint) (sender principal) (recipient principal))
+    (begin
+        (try! (security-verification asset-id))
+        (asserts! (confirm-asset-owner asset-id sender) err-ownership-violation)
+        (ok true)))
+
+;; ============================================================
+;; Advanced Data Structures for Performance and Security
+;; ============================================================
+
+;; Asset transfer locks
+(define-map security-locks uint bool)
+
+;; Extended asset details storage
+(define-map asset-extended-info uint 
+    {
+        creation-timestamp: uint,
+        last-update: uint,
+        properties: (string-ascii 256)
+    })
+
+;; Enhanced asset data retrieval
+(define-read-only (get-asset-extended-info (asset-id uint))
+    (ok (map-get? asset-extended-info asset-id)))
+
+;; System monitoring
+(define-map contract-monitoring uint 
+    {
+        total-assets: uint,
+        admin: principal,
+        max-batch: uint
+    })
+
+;; Gets system limits
+(define-read-only (get-system-limits)
+    (ok {
+        max-bulk-size: bulk-creation-limit,
+        metadata-max-length: u256
+    }))
+

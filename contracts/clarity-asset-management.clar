@@ -295,3 +295,69 @@
 
 (begin
     (var-set asset-counter u0))
+
+
+;; ============================================================
+;; Enhanced Asset Management Functions
+;; ============================================================
+
+;; Retrieves asset transfer history
+(define-public (get-asset-transfer-history (asset-id uint))
+    (ok (map-get? transfer-history asset-id)))
+
+;; Validates metadata before asset transfer
+(define-public (transfer-with-metadata-validation (asset-id uint) (recipient principal))
+    (let ((metadata-url (unwrap! (map-get? asset-metadata asset-id) err-asset-missing)))
+        (asserts! (validate-metadata metadata-url) err-metadata-invalid)
+        (transfer-asset asset-id (unwrap! (nft-get-owner? digital-asset asset-id) err-asset-missing) recipient)))
+
+;; Logs destruction attempts
+(define-private (record-destruction-attempt (asset-id uint) (result bool))
+    (if (not result)
+        (begin
+            (map-set creation-batch-data asset-id "Destruction attempt failed")
+            (ok false))
+        (ok true)))
+
+;; Combined asset query
+(define-read-only (get-asset-combined-status (asset-id uint))
+    (ok {metadata: (unwrap-panic (get-asset-metadata asset-id)),
+         destroyed: (is-asset-destroyed asset-id)}))
+
+;; Verifies asset existence before transfer
+(define-public (verify-before-transfer (asset-id uint))
+    (if (is-none (map-get? asset-metadata asset-id))
+        (err err-asset-missing)
+        (ok true)))
+
+;; ============================================================
+;; Security and Optimization Functions
+;; ============================================================
+
+;; Validates asset ID before creation
+(define-private (validate-asset-creation (asset-id uint))
+    (let ((exists (map-get? asset-metadata asset-id)))
+        (asserts! (is-none exists) err-asset-duplicate)
+        (ok true)))
+
+;; Administrator-only asset destruction
+(define-public (admin-destroy-asset (asset-id uint))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-unauthorized)
+        (asserts! (not (is-asset-destroyed asset-id)) err-previously-destroyed)
+        (try! (nft-burn? digital-asset asset-id tx-sender))
+        (map-set destroyed-assets asset-id true)
+        (ok true)))
+
+;; Enhanced metadata validation
+(define-private (enhanced-metadata-validation (metadata-url (string-ascii 256)))
+    (let ((url-length (len metadata-url)))
+        (if (or (< url-length u1) (> url-length u256))
+            (err err-metadata-invalid)
+            (ok true))))
+
+;; Comprehensive asset lookup
+(define-public (get-full-asset-info (asset-id uint))
+    (ok {metadata: (unwrap-panic (get-asset-metadata asset-id)), 
+         owner: (unwrap-panic (get-asset-owner asset-id)),
+         destroyed: (unwrap-panic (check-destruction-status asset-id))}))
